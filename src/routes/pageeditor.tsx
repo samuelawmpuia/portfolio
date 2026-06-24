@@ -30,9 +30,23 @@ function RouteComponent() {
   const [blocks, setBlocks] = useState<Block[]>([
     { id: uid(), type: 'paragraph', text: '' },
   ])
+  const [thumbnail, setThumbnail] = useState<File | null>(null)
+  const [thumbnailPreview, setThumbnailPreview] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const thumbnailInputRef = useRef<HTMLInputElement | null>(null)
+
+  function handleThumbnailFile(file: File) {
+    setThumbnail(file)
+    setThumbnailPreview(URL.createObjectURL(file))
+  }
+
+  function removeThumbnail() {
+    setThumbnail(null)
+    setThumbnailPreview('')
+    if (thumbnailInputRef.current) thumbnailInputRef.current.value = ''
+  }
 
   // ── Tag input ─────────────────────────────────────────────────────────────
   function handleTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -98,6 +112,21 @@ function RouteComponent() {
     try {
       const processedBlocks: object[] = []
 
+      // Upload thumbnail if provided
+      let thumbnailUrl = ''
+      if (thumbnail) {
+        const ext = thumbnail.name.split('.').pop()
+        const path = `thumbnails/${uid()}.${ext}`
+        const { error: thumbError } = await supabase.storage
+          .from('blog-assets')
+          .upload(path, thumbnail)
+        if (thumbError) throw thumbError
+        const { data: thumbUrlData } = supabase.storage
+          .from('blog-assets')
+          .getPublicUrl(path)
+        thumbnailUrl = thumbUrlData.publicUrl
+      }
+
       for (const block of blocks) {
         if (block.type === 'paragraph') {
           processedBlocks.push({ type: 'paragraph', text: block.text })
@@ -124,6 +153,7 @@ function RouteComponent() {
         tags,
         description: description.trim(),
         content: processedBlocks,
+        thumbnail_url: thumbnailUrl,
         created_at: new Date().toISOString(),
       })
 
@@ -141,6 +171,8 @@ function RouteComponent() {
     setTags([])
     setTagInput('')
     setDescription('')
+    setThumbnail(null)
+    setThumbnailPreview('')
     setBlocks([{ id: uid(), type: 'paragraph', text: '' }])
     setStatus('idle')
     setErrorMsg('')
@@ -173,12 +205,12 @@ function RouteComponent() {
 
   // ── Main editor ───────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-900 py-10 px-4 font-sans">
-      <div className="max-w-2xl mx-auto bg-black rounded-2xl shadow-sm border border-stone-100">
+    <div className="min-h-screen bg-stone-50 py-10 px-4 font-sans">
+      <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-stone-100">
 
         {/* Header */}
         <div className="flex items-center justify-between px-8 py-5 border-b border-stone-100">
-          <h1 className="text-xl font-semibold tracking-tight text-white-900">New post</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-stone-900">New post</h1>
           <span className="text-xs text-stone-400 font-medium uppercase tracking-widest">Draft</span>
         </div>
 
@@ -231,6 +263,62 @@ function RouteComponent() {
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
             />
+          </Field>
+
+          {/* Thumbnail */}
+          <Field label="Thumbnail" hint="Shown as the post cover image">
+            {thumbnailPreview ? (
+              <div className="relative group w-full">
+                <img
+                  src={thumbnailPreview}
+                  alt="Thumbnail preview"
+                  className="w-full h-48 object-cover rounded-lg border border-stone-200"
+                />
+                <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => thumbnailInputRef.current?.click()}
+                    className="px-3 py-1.5 bg-white text-stone-800 text-xs font-medium rounded-md hover:bg-stone-100 transition-colors"
+                  >
+                    Change
+                  </button>
+                  <button
+                    onClick={removeThumbnail}
+                    className="px-3 py-1.5 bg-white text-red-600 text-xs font-medium rounded-md hover:bg-red-50 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+                <input
+                  ref={thumbnailInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleThumbnailFile(f)
+                  }}
+                />
+              </div>
+            ) : (
+              <div
+                onClick={() => thumbnailInputRef.current?.click()}
+                className="w-full h-36 border-2 border-dashed border-stone-300 rounded-lg flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
+              >
+                <span className="text-2xl">🖼</span>
+                <span className="text-xs text-stone-500">Upload thumbnail</span>
+                <span className="text-xs text-stone-400">PNG, JPG, WEBP</span>
+                <input
+                  ref={thumbnailInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) handleThumbnailFile(f)
+                  }}
+                />
+              </div>
+            )}
           </Field>
 
           {/* Content blocks */}
